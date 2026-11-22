@@ -12,7 +12,7 @@
 // MAKEFUN_BOT_DIR names the repository directory (the grader mounts
 // it at /bot) and MAKEFUN_OUTPUT_DIR the output directory (/output).
 
-import { copyFileSync, existsSync, mkdirSync } from "node:fs";
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from "node:fs";
 import { join } from "node:path";
 
 const botDir = process.env.MAKEFUN_BOT_DIR ?? "/bot";
@@ -26,6 +26,33 @@ if (!existsSync(source)) {
   process.exit(1);
 }
 
+// Validate before handing over: POST.json must carry one well-formed
+// X post address (an /status/<id> path on x.com or twitter.com). A
+// malformed file fails loudly here instead of reaching the grader as
+// junk it cannot read the post from.
+let postUrl;
+try {
+  const parsed = JSON.parse(readFileSync(source, "utf8"));
+  postUrl = parsed.url;
+} catch (err) {
+  console.error(`main.ts: POST.json is not valid JSON: ${err.message}`);
+  process.exit(1);
+}
+let url;
+try {
+  url = new URL(postUrl);
+} catch {
+  console.error(`main.ts: POST.json url is not a URL: ${postUrl}`);
+  process.exit(1);
+}
+const hostOk = url.hostname === "x.com" || url.hostname === "twitter.com";
+const pathOk = /^\/[^/]+\/status\/\d+$/.test(url.pathname);
+if (!hostOk || !pathOk) {
+  console.error(`main.ts: POST.json url is not an X post address: ${postUrl}`);
+  process.exit(1);
+}
+
 mkdirSync(outputDir, { recursive: true });
 copyFileSync(source, target);
 console.log(`main.ts: copied ${source} -> ${target}`);
+console.log(`main.ts: post address handed over: ${url.href}`);
